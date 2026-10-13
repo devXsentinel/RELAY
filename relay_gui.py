@@ -1,21 +1,21 @@
 """
-RELAY GUI — Ultra-lightweight Offline Peer-to-Peer Mesh (< 10 KB)
-Zero external dependencies (pure Python). E2EE (SHA256-CTR + HMAC-SHA256).
-Multi-hop store-and-forward routing, loop prevention, reverse ACKs.
-Supports: Direct Computer Wi-Fi Hotspot, Ad-Hoc mesh, Bluetooth PAN, Multi-subnet broadcast.
-Usage: python relay_gui.py [CALLSIGN] [SHARED_KEY] [OPTIONAL_PEER_IP]
+RELAY GUI — Ultra-lightweight Offline Peer-to-Peer Mesh Messenger (< 10 KB)
+Zero external dependencies (pure Python stdlib). End-to-end encrypted (SHA256-CTR + HMAC-SHA256).
+Multi-hop store-and-forward routing, peer auto-discovery, loop prevention, reverse ACKs.
+Usage: python relay_gui.py [CALLSIGN] [SHARED_KEY]
 """
 import socket,threading,time,json,uuid,sys,hashlib,hmac,os,tkinter as tk
 from tkinter import scrolledtext
 if len(sys.argv)>1 and sys.argv[1].lower() in("-h","--help","help"):
-    print("RELAY GUI — Offline Computer Mesh (< 10 KB)\nUsage: python relay_gui.py [CALLSIGN] [KEY] [PEER_IP]")
+    print("RELAY GUI — Ultra-lightweight Offline Encrypted Mesh (< 10 KB)")
+    print("Usage: python relay_gui.py [CALLSIGN] [SHARED_KEY]")
+    print("Example: python relay_gui.py ALICE MeshSecret2026")
     sys.exit(0)
 GRP,PORT,MH='239.255.37.37',37373,10
 nid=sys.argv[1].upper() if len(sys.argv)>1 else "N"+uuid.uuid4().hex[:4].upper()
 rk=sys.argv[2] if len(sys.argv)>2 else os.environ.get("RELAY_KEY","RELAY-SEC-V1")
 SK=hashlib.sha256(rk.encode()).digest();KT=SK[:3].hex().upper()
-dd,pr,om,pip=set(),{},{},set()
-if len(sys.argv)>3:pip.add(sys.argv[3])
+dd,pr,om=set(),{},{}
 st={"tx":0,"rx":0,"fwd":0,"ack":0}
 MB=hasattr(sys,'getandroidapilevel') or os.environ.get("PYDROID3")
 def crypt(b,n):
@@ -32,30 +32,17 @@ def dec_p(h):
     except:return None
 so=socket.socket(socket.AF_INET,socket.SOCK_DGRAM,socket.IPPROTO_UDP)
 so.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-so.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1)
 try:so.setsockopt(socket.SOL_SOCKET,15,1)
 except:pass
 so.bind(('',PORT))
 mq=socket.inet_aton(GRP)+b'\x00'*4
-for o,v in[(socket.IP_ADD_MEMBERSHIP,mq),(socket.IP_MULTICAST_LOOP,1)]:
-    try:so.setsockopt(socket.IPPROTO_IP,o,v)
-    except:pass
+for o,v in[(socket.IP_ADD_MEMBERSHIP,mq),(socket.IP_MULTICAST_LOOP,1)]:so.setsockopt(socket.IPPROTO_IP,o,v)
 def bcast(pk):
-    try:
-        raw=json.dumps(pk).encode()
-        tgs={(GRP,PORT),('255.255.255.255',PORT)}
-        try:
-            for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-                tgs.add((ip.rsplit('.',1)[0]+'.255',PORT))
-        except:pass
-        for ip in pip:tgs.add((ip,PORT))
-        for tg in tgs:
-            try:so.sendto(raw,tg)
-            except:pass
+    try:so.sendto(json.dumps(pk).encode(),(GRP,PORT))
     except:pass
 root=tk.Tk();root.title(f"RELAY — [{nid}]");root.configure(bg="#0f0f11")
 if MB:root.attributes("-fullscreen",True)
-else:root.geometry("740x550");root.minsize(500,370)
+else:root.geometry("720x540");root.minsize(480,360)
 CB,CX,CA,CD,CF,CR="#18181c","#121214","#00e676","#71717a","#f4f4f5","#27272a"
 if MB:FS,FC,FH,FB,Fs,Fi="sans-serif","monospace",12,11,9,10
 else:FS,FC,FH,FB,Fs,Fi="Segoe UI","Consolas",14,10,8,11
@@ -65,12 +52,6 @@ tk.Label(hdr,text="RELAY",font=(FS,FH,"bold"),fg=CA,bg=CB).pack(side=tk.LEFT)
 if not MB:tk.Label(hdr,text=" SECURE MESH",font=(FS,8),fg=CD,bg=CB).pack(side=tk.LEFT,pady=4)
 tk.Label(hdr,text=f" {nid} ",font=(FC,FB,"bold"),fg=CA,bg="#102e1c",bd=1,relief=tk.SOLID).pack(side=tk.RIGHT,padx=(4,0))
 sd=tk.Label(hdr,text="● 0",font=(FC,Fs,"bold"),fg=CD,bg=CB);sd.pack(side=tk.RIGHT,padx=6)
-def ophs():
-    if sys.platform=='win32':os.system('start ms-settings:network-mobilehotspot')
-    elif sys.platform=='linux':os.system('nmcli dev wifi hotspot &')
-    lr("⚡ Wi-Fi Signal: Use Computer Hotspot to mesh without router\n",("sy","L"))
-tk.Button(hdr,text="⚡ HOTSPOT",font=(FS,Fs,"bold"),bg=CR,fg="#fbbf24",bd=0,padx=6,pady=2,
-    activebackground="#3f3f46",cursor="hand2",command=ophs).pack(side=tk.RIGHT,padx=4)
 ftr=tk.Frame(root,bg=CX,padx=8,pady=3);ftr.pack(side=tk.BOTTOM,fill=tk.X)
 sl=tk.Label(ftr,text="TX:0 RX:0 FWD:0 ACK:0",font=C8,fg=CD,bg=CX);sl.pack(side=tk.LEFT)
 tk.Label(ftr,text=f"🔒#{KT}",font=C8,fg=CA,bg=CX).pack(side=tk.RIGHT)
@@ -83,7 +64,6 @@ me=tk.Entry(cr,font=(FS,Fi),**eo);me.pack(side=tk.LEFT,fill=tk.X,expand=True,pad
 def send():
     d,t=de.get().strip().upper(),me.get().strip()
     if not d or not t or d==nid:return
-    if '.' in d:pip.add(d)
     me.delete(0,tk.END);pid=uuid.uuid4().hex[:8]
     pk={"t":"msg","i":pid,"f":nid,"o":d,"x":enc_p(t),"h":MH,"p":[nid],"e":time.time()+3600}
     dd.add(pid);om[pid]=(d,t);st["tx"]+=1;upst()
@@ -114,15 +94,8 @@ def ops(_):
         me.focus_set()
         if MB:togp()
 pb.bind("<<ListboxSelect>>",ops)
-tk.Button(pf,text="SCAN",bg=CR,fg="#e4e4e7",font=(FS,Fs,"bold"),bd=0,pady=3,
+tk.Button(pf,text="SCAN",bg=CR,fg="#e4e4e7",font=(FS,Fs,"bold"),bd=0,pady=4,
     activebackground="#3f3f46",cursor="hand2",command=lambda:[sping(),upui()]).pack(fill=tk.X)
-def add_ip():
-    v=de.get().strip()
-    if '.' in v:
-        pip.add(v);sping();lr(f"Linked IP: {v}\n",("sy","L"))
-    else:lr("Type IP in TO: and click +IP\n",("md","L"))
-tk.Button(pf,text="+ DIRECT IP",bg=CR,fg="#38bdf8",font=(FS,Fs,"bold"),bd=0,pady=3,
-    activebackground="#3f3f46",cursor="hand2",command=add_ip).pack(fill=tk.X,pady=(3,0))
 if MB:tk.Button(hdr,text="☰",bg=CR,fg=CF,font=(FS,FB,"bold"),bd=0,padx=8,command=togp).pack(side=tk.LEFT,padx=(8,0))
 ch=scrolledtext.ScrolledText(cf,bg=CX,fg=CF,font=(FS,FB),bd=0,wrap=tk.WORD,height=6 if MB else 10,
     state=tk.DISABLED,padx=10,pady=8,highlightthickness=1,highlightbackground=CR)
@@ -162,7 +135,7 @@ def hpkt(data):
     if pt=="msg":
         if pk.get("o")==nid:
             st["rx"]+=1;root.after(0,upst)
-            rs=f"via:{' -> '.join(pk['p'])} h:{pk['h']}"
+            rs=f"via:{' → '.join(pk['p'])} h:{pk['h']}"
             dc=dec_p(pk.get("x",""))
             if dc is not None:root.after(0,lambda:pcm(f"FROM: {pk['f']} [🔒]","si",dc,rs))
             else:root.after(0,lambda:pcm(f"FROM: {pk['f']} [⚠️]","se","[FAIL]",rs))
@@ -181,10 +154,7 @@ def hpkt(data):
 run=True
 def ll():
     while run:
-        try:
-            d,a=so.recvfrom(4096)
-            if a and a[0] not in('127.0.0.1','0.0.0.0'):pip.add(a[0])
-            hpkt(d)
+        try:d,_=so.recvfrom(4096);hpkt(d)
         except:pass
 def pl():
     while run:
