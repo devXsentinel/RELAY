@@ -1,14 +1,11 @@
 """
-RELAY GUI — Ultra-lightweight Offline Peer-to-Peer Mesh (< 10 KB)
-Zero external dependencies (pure Python stdlib). E2EE (SHA256-CTR + HMAC-SHA256).
-Multi-hop store-and-forward routing, peer auto-discovery, loop prevention, reverse ACKs.
-Multi-interface auto-mesh: Wi-Fi, Hotspot, Bluetooth PAN, Subnet and Global Broadcast.
-Usage: python relay_gui.py [CALLSIGN] [SHARED_KEY]
+RELAY GUI — Ultra-lightweight Offline Auto-Mesh (< 10 KB). Zero dependencies (pure Python).
+E2EE (SHA256-CTR + HMAC-SHA256). Multi-hop store-and-forward, auto-discovery, reverse ACKs.
 """
 import socket,threading,time,json,uuid,sys,hashlib,hmac,os,tkinter as tk
 from tkinter import scrolledtext
 if len(sys.argv)>1 and sys.argv[1].lower() in("-h","--help","help"):
-    print("RELAY GUI — Ultra-lightweight Offline Mesh (< 10 KB)\nUsage: python relay_gui.py [CALLSIGN] [KEY]")
+    print("RELAY GUI — Auto-Mesh (< 10 KB)\nUsage: python relay_gui.py [CALLSIGN] [KEY]")
     sys.exit(0)
 GRP,PORT,MH='239.255.37.37',37373,10
 nid=sys.argv[1].upper() if len(sys.argv)>1 else "N"+uuid.uuid4().hex[:4].upper()
@@ -30,8 +27,7 @@ def dec_p(h):
         return crypt(ct,n).decode()
     except:return None
 so=socket.socket(socket.AF_INET,socket.SOCK_DGRAM,socket.IPPROTO_UDP)
-so.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-so.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1)
+for opt,v in[(socket.SO_REUSEADDR,1),(socket.SO_BROADCAST,1)]:so.setsockopt(socket.SOL_SOCKET,opt,v)
 try:so.setsockopt(socket.SOL_SOCKET,15,1)
 except:pass
 so.bind(('',PORT))
@@ -44,8 +40,7 @@ def bcast(pk):
         raw=json.dumps(pk).encode()
         tgs={(GRP,PORT),('255.255.255.255',PORT)}
         try:
-            for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-                tgs.add((ip.rsplit('.',1)[0]+'.255',PORT))
+            for ip in socket.gethostbyname_ex(socket.gethostname())[2]:tgs.add((ip.rsplit('.',1)[0]+'.255',PORT))
         except:pass
         for ip in pip:tgs.add((ip,PORT))
         for tg in tgs:
@@ -56,8 +51,7 @@ root=tk.Tk();root.title(f"RELAY — [{nid}]");root.configure(bg="#0f0f11")
 if MB:root.attributes("-fullscreen",True)
 else:root.geometry("740x550");root.minsize(500,370)
 CB,CX,CA,CD,CF,CR="#18181c","#121214","#00e676","#71717a","#f4f4f5","#27272a"
-if MB:FS,FC,FH,FB,Fs,Fi="sans-serif","monospace",12,11,9,10
-else:FS,FC,FH,FB,Fs,Fi="Segoe UI","Consolas",14,10,8,11
+FS,FC,FH,FB,Fs,Fi=("sans-serif","monospace",12,11,9,10)if MB else("Segoe UI","Consolas",14,10,8,11)
 F8,C8=(FS,Fs,"bold"),(FC,Fs)
 hdr=tk.Frame(root,bg=CB,padx=8,pady=6 if MB else 10);hdr.pack(side=tk.TOP,fill=tk.X)
 tk.Label(hdr,text="RELAY",font=(FS,FH,"bold"),fg=CA,bg=CB).pack(side=tk.LEFT)
@@ -65,9 +59,18 @@ if not MB:tk.Label(hdr,text=" SECURE MESH",font=(FS,8),fg=CD,bg=CB).pack(side=tk
 tk.Label(hdr,text=f" {nid} ",font=(FC,FB,"bold"),fg=CA,bg="#102e1c",bd=1,relief=tk.SOLID).pack(side=tk.RIGHT,padx=(4,0))
 sd=tk.Label(hdr,text="● 0",font=(FC,Fs,"bold"),fg=CD,bg=CB);sd.pack(side=tk.RIGHT,padx=6)
 def ophs():
-    if sys.platform=='win32':os.system('start ms-settings:network-mobilehotspot')
-    elif sys.platform=='linux':os.system('nmcli dev wifi hotspot &')
-    lr("⚡ Wi-Fi Mesh: Started Hotspot signal for nearby computers\n",("sy","L"))
+    os.system('start ms-settings:network-mobilehotspot' if sys.platform=='win32' else 'nmcli dev wifi hotspot &')
+    lr("⚡ Wi-Fi Mesh: Broadcast Hotspot signal for nearby PCs\n",("sy","L"))
+def aj():
+    if sys.platform=='win32':
+        try:
+            for l in os.popen('netsh wlan show networks').read().splitlines():
+                if 'SSID' in l and 'RELAY' in l.upper():
+                    s=l.split(':',1)[1].strip()
+                    os.system(f'netsh wlan connect name="{s}"')
+                    root.after(0,lambda:lr(f"⚡ Auto-Joined: {s}\n",("sy","L")))
+                    break
+        except:pass
 tk.Button(hdr,text="⚡ SIGNAL / AP",font=(FS,Fs,"bold"),bg=CR,fg="#fbbf24",bd=0,padx=6,pady=2,
     activebackground="#3f3f46",cursor="hand2",command=ophs).pack(side=tk.RIGHT,padx=4)
 ftr=tk.Frame(root,bg=CX,padx=8,pady=3);ftr.pack(side=tk.BOTTOM,fill=tk.X)
@@ -113,8 +116,8 @@ def ops(_):
         me.focus_set()
         if MB:togp()
 pb.bind("<<ListboxSelect>>",ops)
-tk.Button(pf,text="SCAN",bg=CR,fg="#e4e4e7",font=(FS,Fs,"bold"),bd=0,pady=4,
-    activebackground="#3f3f46",cursor="hand2",command=lambda:[sping(),upui()]).pack(fill=tk.X)
+tk.Button(pf,text="SCAN / AUTO",bg=CR,fg="#e4e4e7",font=(FS,Fs,"bold"),bd=0,pady=4,
+    activebackground="#3f3f46",cursor="hand2",command=lambda:[aj(),sping(),upui()]).pack(fill=tk.X)
 if MB:tk.Button(hdr,text="☰",bg=CR,fg=CF,font=(FS,FB,"bold"),bd=0,padx=8,command=togp).pack(side=tk.LEFT,padx=(8,0))
 ch=scrolledtext.ScrolledText(cf,bg=CX,fg=CF,font=(FS,FB),bd=0,wrap=tk.WORD,height=6 if MB else 10,
     state=tk.DISABLED,padx=10,pady=8,highlightthickness=1,highlightbackground=CR)
@@ -182,8 +185,13 @@ def pl():
     for _ in range(2):
         if not run:break
         sping();time.sleep(0.5)
+    ct=0
     while run:
-        try:sping();root.after(0,upui);time.sleep(4)
+        try:
+            sping();root.after(0,upui)
+            ct+=1
+            if ct%3==0 and not pr:threading.Thread(target=aj,daemon=True).start()
+            time.sleep(4)
         except:pass
 def oc():
     global run;run=False
@@ -193,5 +201,6 @@ def oc():
 root.protocol("WM_DELETE_WINDOW",oc)
 threading.Thread(target=ll,daemon=True).start()
 threading.Thread(target=pl,daemon=True).start()
+threading.Thread(target=aj,daemon=True).start()
 lr(f"Node online [{nid}] Lock#{KT}\n",("sy","L"))
 root.mainloop()
