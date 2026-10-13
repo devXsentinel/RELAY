@@ -1,6 +1,6 @@
 """
-RELAY GUI — Ultra-lightweight Offline Auto-Mesh (< 10 KB). Zero dependencies (pure Python).
-E2EE (SHA256-CTR + HMAC-SHA256). Multi-hop store-and-forward, auto-discovery, reverse ACKs.
+RELAY GUI — Offline Auto-Mesh (< 10 KB). E2EE (SHA256-CTR + HMAC).
+Multi-hop auto-forwarding, zero-touch broadcast, reverse ACKs.
 """
 import socket,threading,time,json,uuid,sys,hashlib,hmac,os,tkinter as tk
 from tkinter import scrolledtext
@@ -42,8 +42,7 @@ def bcast(pk):
         try:
             for ip in socket.gethostbyname_ex(socket.gethostname())[2]:tgs.add((ip.rsplit('.',1)[0]+'.255',PORT))
         except:pass
-        for ip in pip:tgs.add((ip,PORT))
-        for tg in tgs:
+        for tg in tgs|{(ip,PORT)for ip in pip}:
             try:so.sendto(raw,tg)
             except:pass
     except:pass
@@ -60,15 +59,14 @@ tk.Label(hdr,text=f" {nid} ",font=(FC,FB,"bold"),fg=CA,bg="#102e1c",bd=1,relief=
 sd=tk.Label(hdr,text="● 0",font=(FC,Fs,"bold"),fg=CD,bg=CB);sd.pack(side=tk.RIGHT,padx=6)
 def ophs():
     os.system('start ms-settings:network-mobilehotspot' if sys.platform=='win32' else 'nmcli dev wifi hotspot &')
-    lr("⚡ Wi-Fi Mesh: Broadcast Hotspot signal for nearby PCs\n",("sy","L"))
+    lr("⚡ Wi-Fi Mesh: Started Hotspot signal for nearby PCs\n",("sy","L"))
 def aj():
     if sys.platform=='win32':
         try:
             for l in os.popen('netsh wlan show networks').read().splitlines():
-                if 'SSID' in l and 'RELAY' in l.upper():
-                    s=l.split(':',1)[1].strip()
-                    os.system(f'netsh wlan connect name="{s}"')
-                    root.after(0,lambda:lr(f"⚡ Auto-Joined: {s}\n",("sy","L")))
+                if 'RELAY' in l.upper() and ':' in l:
+                    os.system(f'netsh wlan connect name="{l.split(":",1)[1].strip()}"')
+                    root.after(0,lambda:lr("⚡ Auto-Joined Mesh Signal\n",("sy","L")))
                     break
         except:pass
 tk.Button(hdr,text="⚡ SIGNAL / AP",font=(FS,Fs,"bold"),bg=CR,fg="#fbbf24",bd=0,padx=6,pady=2,
@@ -81,10 +79,11 @@ cr=tk.Frame(bot,bg=CB);cr.pack(fill=tk.X)
 tk.Label(cr,text="TO:",font=(FS,Fs,"bold"),fg="#a1a1aa",bg=CB).pack(side=tk.LEFT)
 eo={"bg":CX,"fg":CF,"insertbackground":"#fff","bd":1,"relief":tk.SOLID,"highlightbackground":CR}
 de=tk.Entry(cr,font=(FC,Fi,"bold"),width=8 if MB else 12,**eo);de.pack(side=tk.LEFT,padx=(4,6))
+de.insert(0,"ALL")
 me=tk.Entry(cr,font=(FS,Fi),**eo);me.pack(side=tk.LEFT,fill=tk.X,expand=True,padx=(0,6))
 def send():
-    d,t=de.get().strip().upper(),me.get().strip()
-    if not d or not t or d==nid:return
+    d,t=de.get().strip().upper() or "ALL",me.get().strip()
+    if not t or d==nid:return
     if '.' in d:pip.add(d)
     me.delete(0,tk.END);pid=uuid.uuid4().hex[:8]
     pk={"t":"msg","i":pid,"f":nid,"o":d,"x":enc_p(t),"h":MH,"p":[nid],"e":time.time()+3600}
@@ -124,7 +123,7 @@ ch=scrolledtext.ScrolledText(cf,bg=CX,fg=CF,font=(FS,FB),bd=0,wrap=tk.WORD,heigh
 ch.pack(fill=tk.BOTH,expand=True)
 ch.tag_config("R",justify="right",rmargin=10);ch.tag_config("L",justify="left",lmargin1=10,lmargin2=10)
 ch.tag_config("mh",foreground="#fff",font=(FS,FH-1,"bold"))
-for t,c,f in[("si",CA,F8),("so","#fbbf24",F8),("se","#ef4444",F8),("md","#52525b",C8),("ak",CA,(FC,Fs,"bold")),("sy","#38bdf8",C8)]:
+for t,c,f in[("si",CA,F8),("so","#fbbf24",F8),("se","#ef4444",F8),("md","#52525b",C8),("ak",CA,F8),("sy","#38bdf8",C8)]:
     ch.tag_config(t,foreground=c,font=f)
 def upst():sl.config(text=f"TX:{st['tx']} RX:{st['rx']} FWD:{st['fwd']} ACK:{st['ack']}")
 def lr(t,tg):
@@ -155,17 +154,21 @@ def hpkt(data):
     pk["p"].append(nid);pk["h"]-=1
     pt=pk.get("t")
     if pt=="msg":
-        if pk.get("o")==nid:
-            st["rx"]+=1;root.after(0,upst)
+        tgt=pk.get("o")
+        if tgt in(nid,"ALL"):
+            st["rx"]+=1;upst()
             rs=f"via:{' → '.join(pk['p'])} h:{pk['h']}"
             dc=dec_p(pk.get("x",""))
-            if dc is not None:root.after(0,lambda:pcm(f"FROM: {pk['f']} [🔒]","si",dc,rs))
+            if dc is not None:
+                pfx=f"FROM: {pk['f']} [🔒]"if tgt!="ALL"else f"📢 ALL ({pk['f']}) [🔒]"
+                root.after(0,lambda:pcm(pfx,"si",dc,rs))
             else:root.after(0,lambda:pcm(f"FROM: {pk['f']} [⚠️]","se","[FAIL]",rs))
-            ak={"t":"ack","i":uuid.uuid4().hex[:8],"f":nid,"o":pk["f"],"h":MH,"p":[nid],"r":pid,"e":time.time()+1800}
-            dd.add(ak["i"]);bcast(ak)
-        else:
+            if tgt==nid:
+                ak={"t":"ack","i":uuid.uuid4().hex[:8],"f":nid,"o":pk["f"],"h":MH,"p":[nid],"r":pid,"e":time.time()+1800}
+                dd.add(ak["i"]);bcast(ak)
+        if tgt!=nid:
             st["fwd"]+=1;upst()
-            root.after(0,lambda:lr(f"  ⇄ Relay {pid[:6]}→{pk.get('o')} h:{pk['h']}\n",("md","L")))
+            root.after(0,lambda:lr(f"  ⇄ Relay {pid[:6]}→{tgt} h:{pk['h']}\n",("md","L")))
             bcast(pk)
     elif pt=="ack":
         if pk.get("o")==nid:
@@ -182,14 +185,11 @@ def ll():
             hpkt(d)
         except:pass
 def pl():
-    for _ in range(2):
-        if not run:break
-        sping();time.sleep(0.5)
+    for _ in range(2):sping();time.sleep(0.5)
     ct=0
     while run:
         try:
-            sping();root.after(0,upui)
-            ct+=1
+            sping();root.after(0,upui);ct+=1
             if ct%3==0 and not pr:threading.Thread(target=aj,daemon=True).start()
             time.sleep(4)
         except:pass
